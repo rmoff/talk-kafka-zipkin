@@ -19,6 +19,7 @@ import zipkin2.reporter.kafka11.KafkaSender;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Random;
 
 public class TwitterStreamProcessor {
 
@@ -35,6 +36,7 @@ public class TwitterStreamProcessor {
             .spanReporter(reporter)
             .build();
     final KafkaTracing kafkaTracing = KafkaTracing.newBuilder(tracing).remoteServiceName("kafka").build();
+    final KafkaStreamsTracing kafkaStreamsTracing = KafkaStreamsTracing.create(kafkaTracing);
     /* END TRACING INSTRUMENTATION */
 
     final Properties config = new Properties();
@@ -44,12 +46,13 @@ public class TwitterStreamProcessor {
     config.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
     config.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://localhost:8081");
 
-    final StreamsBuilder builder = new StreamsBuilder();
+    final StreamsBuilder builder = kafkaStreamsTracing.builder();
     builder.stream("twitter_json_01", Consumed.with(Serdes.String(), Serdes.String()))
         .mapValues(value -> {
           try {
+            Thread.sleep(new Random().nextInt(100));
             return objectMapper.readTree(value);
-          } catch (IOException e) {
+          } catch (IOException | InterruptedException e) {
             e.printStackTrace();
             return null;
           }
@@ -59,7 +62,7 @@ public class TwitterStreamProcessor {
         .to("twitter_avro_v01");
 
     final Topology topology = builder.build();
-    final KafkaClientSupplier clientSupplier = KafkaStreamsTracing.create(kafkaTracing).kafkaClientSupplier();
+    final KafkaClientSupplier clientSupplier = kafkaStreamsTracing.kafkaClientSupplier();
     final KafkaStreams kafkaStreams = new KafkaStreams(topology, config, clientSupplier);
     kafkaStreams.start();
 
@@ -67,6 +70,11 @@ public class TwitterStreamProcessor {
   }
 
   private static Tweet parseTweet(JsonNode jsonValue) {
+    try {
+      Thread.sleep(new Random().nextInt(100));
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
     return Tweet.newBuilder()
         .setText(jsonValue.get("Text").textValue())
         .setLang(jsonValue.get("Lang").textValue())
